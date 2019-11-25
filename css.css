@@ -1,0 +1,38 @@
+@CHARSET "ISO-8859-1";
+body {
+
+}
+
+.graticule {
+	fill: none;
+  	stroke: #777;
+  	stroke-width: .5px;
+  	stroke-opacity: .5;
+}
+
+.land {
+  	fill: #71a8bf;
+}
+
+.state {
+	fill: #71a8bf;
+  	stroke: #42805f;
+  	stroke-width: .5px;
+  	stroke-opacity: .5;
+}
+
+table, td, th {
+	border: 1px solid black;
+}
+
+th {
+	cursor: pointer;
+}
+
+.histogram {
+	background-color: white;
+}
+
+.scatter {
+	background-color: white;
+}

@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html>
+<link rel="stylesheet" type="text/css" href="css.css">
+<script src="d3.min.js"></script>
+<script src="//d3js.org/topojson.v1.min.js"></script>
+<head>
+<meta charset="ISO-8859-1">
+<title>VDA</title>
+</head>
+<body>
+
+</body>
+<script>
+var svgHeight = 800;
+var svgWidth = 1000;
+var jsonURL = "https://d3js.org/us-10m.v1.json";
+var mySvg = d3.select("body").append("div").style("width", svgWidth + "px").style("height", svgHeight + "px")
+.style("float", "left")
+.append("svg").attr("width",svgWidth).attr("height",svgHeight)
+.style("background-color", "#a8deed");
+var rightSide = d3.select("body").append("div").style("overflow", "scroll").style("max-height", "800px")
+.style("height", "800px").style("width", "800px").style("left", "20px");
+var topol = mySvg.append("g").attr("class", "toplogy");
+var mapBrushGroup = mySvg.append("g").attr("class", "brush");
+var dataBars = mySvg.append("g").attr("class", "bars").raise();
+var legend = mySvg.append("g").attr("class", "legend").raise();
+//set up tables
+var tableDiv = rightSide.append("div");
+var table = tableDiv.append("table").attr("class", "table");
+var thead = table.append("thead");
+var tbody = table.append("tbody");
+var table2 = tableDiv.append("table").attr("class", "table").style("display", "none");
+var thead2 = table2.append("thead").append("tr");
+var tbody2 = table2.append("tbody");
+//set up histogram svg
+var histogram = rightSide.append("svg").attr("width", 800).attr("height", 800).attr("class", "histogram").style("display","none");
+histogram.append("ellipse")
+.attr("cx", 400)
+.attr("cy", 20)
+.attr("rx", 50)
+.attr("ry", 15)
+.on("click", goBack)
+.style("cursor", "pointer")
+.style("fill", "#756bb1");
+histogram.append("text")
+.text("go back")
+.attr("x", 400)
+.attr("y", 22)
+.attr("text-anchor", "middle")
+.on("click", goBack)
+.style("cursor", "pointer");
+
+histogram.append("text")
+.attr("transform", "translate(12, 400) rotate(-90)")
+.attr("text-anchor", "middle")
+.text("Frequency")
+
+var yAxisGroup = histogram.append("g").attr("transform", "translate(40, 40)");
+var yAxis = d3.axisLeft().ticks(10);
+
+//set up scatterplot svg
+var scatterplot_div = d3.select("body").append("div").style("height", "800px").style("width", "800px").style("float", "left");
+var scatterplot_svg = scatterplot_div.append("svg").attr("width", 800).attr("height", 800).attr("class", "scatter");
+var scatter_xAxisGroup = scatterplot_svg.append("g")
+.attr("transform", "translate(" + 50 + ", " + 720 + ")");
+var scatter_xAxis = d3.axisBottom();
+var scatter_yAxisGroup = scatterplot_svg.append("g")
+.attr("transform", "translate(" + 50 + "," + 20 + ")");
+var scatter_yAxis = d3.axisLeft();
+scatterplot_svg.append("text")
+.attr("transform", "translate(12, 400) rotate(-90)")
+.attr("text-anchor", "middle")
+.text("Number of Claims");
+scatterplot_svg.append("text")
+.attr("transform", "translate(400, 760)")
+.attr("text-anchor", "middle")
+.text("Number of Passengers");
+var regression_line = scatterplot_svg.append("line");
+
+
+//set up line graph svg
+var linegraph_div = d3.select("body").append("div").style("height", "800px").style("width", "800px").style("float", "left");
+var linegraph_svg = linegraph_div.append("svg").attr("width", 800).attr("height", 800).attr("class", "linegraph");
+var line_xAxis = d3.axisBottom().ticks(d3.timeYear.every(1));
+var line_xScale = d3.scaleTime()
+.range([0, 700]);
+var line_xAxisGroup = linegraph_svg.append("g")
+.attr("transform", "translate(" + 50 + ", " + 620 + ")");
+var line_xAxis2 = d3.axisBottom();
+var line_xAxisGroup2 = linegraph_svg.append("g")
+.attr("transform", "translate(" + 50 + ", " + 720 + ")");
+var timeScale = d3.scaleTime()
+.range([0, 700])
+.domain([new Date("July 2001"), new Date("June 2009")]);
+line_xAxis2.scale(timeScale);
+line_xAxisGroup2.call(line_xAxis2);
+var line_yAxis = d3.axisLeft();
+var line_yAxisGroup = linegraph_svg.append("g")
+.attr("transform", "translate(" + 50 + "," + 20 + ")");
+var lineGraph = linegraph_svg.append("g")
+.attr("transform", "translate(" + 50 + ", " + 20 + ")")
+.append("path");
+linegraph_svg.append("text")
+.attr("transform", "translate(12, 400) rotate(-90)")
+.attr("text-anchor", "middle")
+.text("Average Claim Value in $");
+linegraph_svg.append("text")
+.attr("transform", "translate(400, 760)")
+.attr("text-anchor", "middle")
+.text("Year")
+
+//brushes
+var mapBrush = d3.brush().extent([[0,0], [svgWidth, svgHeight]]).on("end", brushedMap);
+var scatterBrush = d3.brush().extent([[0,0], [800, 800]]).on("end", brushedScatter);
+var lineBrush = d3.brushX().extent([[0, -50], [700, 0]]).on("end", brushedLine);
+
+
+
+var projection = d3.geoAlbersUsa().scale(svgWidth).translate([svgWidth/2, svgHeight/2]).scale(svgWidth);
+var path = d3.geoPath(projection);
+
+//load topology json
+d3.json("us.json").then(function(data) {
+	//console.log(data);
+	var topology_land = topojson.feature(data, data.objects.land)
+	var topology_states = topojson.feature(data, data.objects.states)
+	
+	//console.log(topology_land);
+	//console.log(topology_states);
+	
+	topol.append("path").datum(topology_land).attr("class", "land").attr("d", path);
+
+	topol.append("path").datum(topology_states).attr("class", "state").attr("d", path).style("fill", "#7bbda6").style("stroke", "#173491");
+
+	//create graticules
+	var graticule = d3.geoGraticule().step([5, 5]);
+	topol.selectAll("path").data(graticule.lines()).enter().append("path").attr("class", "graticule").attr("d", path);
+	
+
+});
+
+// data variables
+var data_all;
+var data_filtered;
+var passengers_data;
+var codes;
+var individual_claims;
+var columns;
+var years = [2002, 2009];
+var selected_code = "EWR";
+var brush_codes = [];
+
+var max;
+var barHeight = 50;
+var barWidth = 7;
+var scale;
+var text_size = 10;
+
+d3.csv("tsa_claims_years.csv").then(function(data) {
+	data.forEach(function(el){
+		//convert coordinates from string to array
+		el.coordinates = JSON.parse("[" + el.coordinates + "]");
+		//project from world to svg
+		el.coordinates = projection(el.coordinates);
+		//convert claim amount to number
+		el["Claim Amount"] = +el["Claim Amount"];
+		//el["Year"] = +el["Year"];
+		});
+	//console.log(data);
+	
+	data_all = data;
+	data_filtered = data_all.slice();
+	
+	codes = passengers_data.map(function(el) {
+		return {
+			code : el["Airport Code"],
+			total : 0,
+			total_claim : 0,
+			coordinates : [0, 0],
+			claim_mean : 0,
+			passengers : 0
+		};
+	});
+	codes.forEach(function(el) {
+		el.coordinates = data_all.find(e => e["Airport Code"] == el.code).coordinates;
+	});
+	
+	selected_code = data[0]["Airport Code"];
+	var airport_name = data.find(function (el) {
+		return el["Airport Code"] == selected_code;
+	})["Airport Name"];
+	
+	//create table columns
+	columns = d3.keys(data[0]);
+	columns.splice(1,2);
+	columns.splice(-1, 1);
+	tableDiv.append("p")
+	.text("Displaying individual claims for " + selected_code + " - " + airport_name)
+	.style("cursor", "pointer")
+	.lower();
+	
+	thead.append("tr")
+	.selectAll("th")
+	.data(columns)
+	.enter()
+	.append("th")
+	.text(function(d) {return d;})
+	.on("click", function(d) {
+		showHistogram(d);
+	});
+	
+	updateData();
+
+	//call brush
+	mapBrushGroup.call(mapBrush);
+	scatterplot_svg.append("g").attr("class","brush").lower().call(scatterBrush);
+	line_xAxisGroup2.call(lineBrush).call(lineBrush.move, timeScale.range());
+	
+	//add airport labels
+	mySvg.selectAll("text")
+	.data(codes)
+	.enter()
+	.append("text")
+	.text(function(d) {return d.code;} )
+	.attr("x", function(d) {return d.coordinates[0] - text_size;} )
+	.attr("y", function(d) {return d.coordinates[1] + text_size})
+	.style("font-size", text_size)
+	.style("pointer-events", "none");
+	
+	//add legends
+	legend.append("text")
+	.text("Data Point Size Legend : Total Claims")
+	.attr("x", 10)
+	.attr("y", svgHeight - barHeight - 10)
+	.style("font-size", 10)
+	
+	legend.append("rect")
+	.attr("x", 10)
+	.attr("y", svgHeight - barHeight - 5)
+	.attr("width", barWidth)
+	.attr("height", barHeight)
+	.style("fill", "ffffd4")
+	.style("stroke", "black")
+	.style("stroke-width", 0.5)
+	
+	legend.append("text")
+	.text("- " + max + " claims")
+	.attr("x", 10 + barWidth + 1)
+	.attr("y", svgHeight - barHeight - 2)
+	.attr("id", "max_legend")
+	.style("font-size", 10)
+	
+	legend.append("text")
+	.text("- no claims")
+	.attr("x", 10 + barWidth + 1)
+	.attr("y", svgHeight - 3)
+	.style("font-size", 10)
+	
+	legend.append("text")
+	.text("Data Point Color Legend : Average Claim Amount ")
+	.attr("x", 200)
+	.attr("y", svgHeight - barHeight - 10)
+	.style("font-size", 10)
+	
+	legend.append("rect")
+	.attr("x", 200)
+	.attr("y", svgHeight - barHeight/2 - 10)
+	.attr("width", barWidth)
+	.attr("height", barWidth)
+	.style("stroke", "black")
+	.style("stroke-width", 0.5)
+	.style("fill", "#ffffd4")
+
+	legend.append("text")
+	.attr("x", 200 + barWidth + 1)
+	.attr("y", svgHeight - barHeight/2 - 2)
+	.text("  < 500")
+	.style("font-size", 10)
+	
+	legend.append("rect")
+	.attr("x", 250)
+	.attr("y", svgHeight - barHeight/2 - 10)
+	.attr("width", barWidth)
+	.attr("height", barWidth)
+	.style("stroke", "black")
+	.style("stroke-width", 0.5)
+	.style("fill", "#fed98e")
+
+	legend.append("text")
+	.attr("x", 250 + barWidth + 1)
+	.attr("y", svgHeight - barHeight/2 - 2)
+	.text("  < 1000")
+	.style("font-size", 10)
+	
+	legend.append("rect")
+	.attr("x", 300)
+	.attr("y", svgHeight - barHeight/2 - 10)
+	.attr("width", barWidth)
+	.attr("height", barWidth)
+	.style("stroke", "black")
+	.style("stroke-width", 0.5)
+	.style("fill", "#fe9929")
+
+	legend.append("text")
+	.attr("x", 300 + barWidth + 1)
+	.attr("y", svgHeight - barHeight/2 - 2)
+	.text("  < 2000")
+	.style("font-size", 10)
+	
+	legend.append("rect")
+	.attr("x", 350)
+	.attr("y", svgHeight - barHeight/2 - 10)
+	.attr("width", barWidth)
+	.attr("height", barWidth)
+	.style("stroke", "black")
+	.style("stroke-width", 0.5)
+	.style("fill", "cc4c02")
+
+	legend.append("text")
+	.attr("x", 350 + barWidth + 1)
+	.attr("y", svgHeight - barHeight/2 - 2)
+	.text("  >= 2000")
+	.style("font-size", 10);
+	
+});
+
+d3.csv("enplanement_02-09.csv").then(function(data) {
+	data.forEach(function (el) {
+		el["2002"] = +el["2002"];
+		el["2003"] = +el["2003"];
+		el["2004"] = +el["2004"];
+		el["2005"] = +el["2005"];
+		el["2006"] = +el["2006"];
+		el["2007"] = +el["2007"];
+		el["2008"] = +el["2008"];
+		el["2009"] = +el["2009"];
+	})
+	passengers_data = data;
+	
+});
+
+function updateData() {
+	codes.forEach(function (el) {
+		el.total = 0;
+		el.total_claim = 0;
+		el.claim_mean = 0;
+		el.passengers = 0;
+	})
+	//count claims per airport
+	data_filtered.forEach(function(el){
+		codes.find(function(e) {
+			if (e.code == el["Airport Code"]) {
+				e.coordinates = el.coordinates;
+				e.total++;
+				e.total_claim += el["Claim Amount"];
+				return ;
+			}
+		});
+	});
+	codes.forEach(function(el) {
+		//calculate average claim amount per airport
+		el.claim_mean = el.total_claim / el.total;
+		//calculate number of passengers
+		for (var i = years[0]; i <= years[1]; i++) {
+			el.passengers += passengers_data.find(e => e["Airport Code"] == el.code)[i];
+		}
+	});
+
+	//console.log(codes);
+	
+	max = d3.max(codes, function(d) {
+		return d.total;
+	});
+	scale = d3.scaleLinear().domain([0, max]).range([0, barHeight]);
+	
+	let bars = dataBars.selectAll("rect").data(codes);
+	let barsEnter = bars.enter().append("rect");
+
+	bars.merge(barsEnter)
+	.attr("x", function(d) {return d.coordinates[0] - barWidth/2;} )
+	.attr("y", function(d) {return d.coordinates[1] - scale(d.total);} )
+	.attr("width", barWidth)
+	.attr("height", function(d) {return scale(d.total);} )
+	.style("fill", function(d) {
+		if (d.claim_mean < 500) return "#ffffd4";
+		if (d.claim_mean < 1000) return "#fed98e";
+		if (d.claim_mean < 2000) return "#fe9929";
+		else return "#cc4c02";
+	})
+	.style("stroke", "black")
+	.style("stroke-width", 0.5)
+	.on("mouseover", function(d) {
+		//bring to foreground
+		d3.select(this).raise();
+		//highlight
+		d3.select(this).style("stroke-width", 2)
+		.style("stroke", "white");
+		//show total claims text
+		mySvg.append("text")
+		.text(d.total)
+		.attr("id", "total_claims_text")
+		.attr("x", d.coordinates[0] - barWidth/2 - text_size )
+		.attr("y", d.coordinates[1] - scale(d.total) - text_size);
+	})
+	.on("mouseout", function() {
+		d3.select("#total_claims_text").remove();
+		d3.select(this).style("stroke-width", 0.5)
+		.style("stroke", "black");
+	})
+	.on("click", function(d) {
+		selected_code = d.code;
+		updateTable();
+	});
+
+	bars.exit().remove();
+	
+	var max_text = d3.select("#max_legend");
+	if (max_text) {
+		max_text.text(max + " claims");
+	}
+	
+	updateTable();
+	updateScatterplot();
+	updateLine();
+
+}
+
+function updateTable() {
+	histogram.style("display", "none");
+	tableDiv.style("display", "initial");
+	if (brush_codes.length == 0) {
+		table.style("display", "block");
+		table2.style("display", "none");
+		
+		var airport_name = data_all.find(function (el) {
+			return el["Airport Code"] == selected_code;
+		})["Airport Name"];
+		
+		tableDiv.select("p")
+		.text("Displaying individual claims for " + selected_code + " - " + airport_name);
+		
+		individual_claims = data_filtered.filter(function(el) {
+			return el["Airport Code"] == selected_code;
+		})
+		.map(function (el) {
+			var filtered = {};
+			columns.forEach(function(e) {
+				filtered[e] = el[e];
+			});
+			return filtered;
+		});
+		
+		//console.log(individual_claims);
+		
+		let rows = table.selectAll("tbody")
+		.selectAll("tr")
+		.data(individual_claims)
+		
+		let rowsEnter = rows.enter()
+		.append("tr")
+		
+		rows.exit().remove();
+		
+		let cells = rows.merge(rowsEnter)
+		.selectAll("td")
+		.data(function(d) {
+			return columns.map(function (el) {
+				return d[el];
+			});
+		})
+		
+		let cellsEnter = cells.enter()
+		.append("td");
+		
+		cells.merge(cellsEnter).text(function(d) {return d;});
+		
+		cells.exit().remove();
+		
+	}
+	else {
+		table.style("display", "none");
+		table2.style("display", "block");
+		
+		tableDiv.select("p")
+		.text("");
+
+		individual_claims = data_filtered.slice();
+		var col = ["Airport Code"];
+		individual_claims.filter(function(el, id, ar) {
+			return ar.findIndex(e => e["Claim Type"] == el["Claim Type"]) == id;
+		}).forEach(e => col.push(e["Claim Type"]));
+		individual_claims = brush_codes.map(function (el) {
+			var claims = {};
+			col.forEach(function(e) {
+				claims[e] = d3.sum(individual_claims.filter(d => d["Airport Code"] == el && d["Claim Type"] == e), function(d) {return 1});
+			});
+			claims["Airport Code"] = el;
+			return claims;
+		});
+
+		let columns2 = table2.selectAll("thead")
+		.selectAll("tr")
+		.selectAll("th")
+		.data(col);
+		
+		let columnsEnter = columns2.enter().append("th");
+		
+		columns2.merge(columnsEnter)
+		.text(function (d) {return d;})
+		.on("click", function(d) {
+		showHistogram(d);
+		});
+
+		columns2.exit().remove();
+		
+		
+		let rows = table2.selectAll("tbody")
+		.selectAll("tr")
+		.data(individual_claims)
+		
+		let rowsEnter = rows.enter().append("tr");
+		
+		rows.exit().remove();
+		
+		let cells = rows.merge(rowsEnter)
+		.selectAll("td")
+		.data(function(d) {
+			return col.map(function (el) {
+				return d[el];
+			});
+		})
+		
+		let cellsEnter = cells.enter().append("td");
+		
+		cells.merge(cellsEnter).text(function(d) {return d;});
+		
+		cells.exit().remove();
+	}
+	
+}
+
+function showHistogram(column) {
+	if (column == "Airport Code") { return; }
+	histogram.style("display", "initial");
+	tableDiv.style("display", "none");
+	var selection_data;
+	//select the data
+	if (brush_codes.length == 0) {
+		selection_data = individual_claims.map(function(el) {
+			return {
+				variable : el[column],
+				frequency : 0
+			}
+		})
+		.filter(function(el, id, ar) {
+			return ar.findIndex(e => e.variable == el.variable) == id;
+		});
+		//count frequency
+		individual_claims.forEach(function (el) {
+			selection_data.find(function (e) {
+				if (e.variable == el[column]) {
+					e.frequency++;
+				}
+			})
+		});
+	} else {
+		selection_data = individual_claims.map(function(el) {
+			return {
+				variable : el["Airport Code"],
+				frequency : el[column]
+			}
+		});
+	}
+	
+	//console.log(selection_data);
+	
+	//calculate max for bars
+	let dataMax = d3.max(selection_data, function(d) {
+		return d.frequency;
+	});
+	//console.log(dataMax);
+	var barScale = d3.scaleLinear().range([0, 700]).domain([0, dataMax]);
+	var n_bars = d3.keys(selection_data).length;
+	
+	//add bars
+	let bars = histogram.selectAll("rect").data(selection_data);
+	let barsEnter = bars.enter().append("rect");
+	
+	bars.merge(barsEnter)
+	.attr("x", function(d, i) {return 42 + i*(700/n_bars + 20/n_bars);})
+	.attr("y", function(d) {return 40 + 700 - barScale(d.frequency);})
+	.attr("width", 700/n_bars)
+	.attr("height", function(d) {return barScale(d.frequency)})
+	.style("fill", "cbc9e2");
+	
+	bars.exit().remove();
+	
+	// add labels
+	let labels = histogram.selectAll(".label").data(selection_data);
+	let labelsEnter = labels.enter().append("text")
+	
+	var labelSize = d3.min([700/n_bars, 20]);
+	labels.merge(labelsEnter)
+	.text(function(d) {
+		return d.variable;
+	})
+	.attr("font-size", labelSize)
+	.attr("text-anchor", "start")
+	.attr("transform", function(d, i) {
+		var x = 42 + i*(700/n_bars + 20/n_bars) + (700/n_bars)/2;
+		return "translate( " + x + ", 740) rotate(-75)";
+	})
+	.attr("class", "label");
+	
+	labels.exit().remove();
+	
+	barScale.domain([dataMax, 0]);
+	yAxis.scale(barScale);
+	yAxisGroup.call(yAxis);
+	
+}
+
+function goBack() {
+	histogram.style("display", "none");
+	tableDiv.style("display", "initial");
+}
+
+function updateScatterplot() {
+	var data = codes.slice();
+	if (brush_codes.length != 0) {
+		data = data.filter(function(el) {
+			return brush_codes.includes(el.code);
+		});
+	}
+	var xMax = d3.max(data, function(d) {
+		return d.passengers;
+	});
+	var xScale = d3.scaleLinear()
+	.range([0, 700])
+	.domain([0, xMax]);
+	scatter_xAxis.scale(xScale);
+	scatter_xAxisGroup.call(scatter_xAxis);
+	
+	var yMax =  d3.max(data, function(d) {
+		return d.total;
+	});
+	var yScale = d3.scaleLinear()
+	.range([700, 0])
+	.domain([0, yMax]);
+	scatter_yAxis.scale(yScale);
+	scatter_yAxisGroup.call(scatter_yAxis);
+
+	let dots = scatterplot_svg.selectAll("circle").data(data);
+	let dotsEnter = dots.enter().append("circle");
+	
+	dots.merge(dotsEnter)
+	.attr("r", 3)
+	.attr("cx", function(d) {return 50 + xScale(d.passengers);})
+	.attr("cy", function(d) {return 20 + yScale(d.total);});
+	
+	dots.exit().remove();
+	
+	//linear regression
+	var sum = 0;
+	var xSum = 0;
+	var ySum = 0;
+	var sqSum = 0;
+	data.forEach(function(d) {
+		sum += d.passengers * d.total;
+		xSum += d.passengers;
+		ySum += d.total;
+		sqSum += (d.passengers * d.passengers);
+	});
+	var slope = (sum * data.length - xSum * ySum) / (sqSum * data.length - xSum * xSum);
+	var intercept = (ySum - slope * xSum) / data.length;
+	
+	var xMin = d3.min(data, function(d) {
+		return d.passengers;
+	});
+	
+	regression_line
+	.attr("x1", 50 + xScale(xMin))
+	.attr("y1", 20 + yScale(slope * xMin + intercept))
+	.attr("x2", 50 + xScale(xMax))
+	.attr("y2", 20 + yScale(slope * xMax + intercept))
+	.style("stroke-width", 2)
+	.style("stroke", "#58508d");
+}
+
+function updateLine() {
+	var data_filt = data_filtered.slice();
+	if (brush_codes.length != 0) {
+		data_filt = data_filt.filter(e => brush_codes.includes(e["Airport Code"]));
+	}
+	line_xAxis.scale(line_xScale);
+	line_xAxisGroup.call(line_xAxis);
+	
+	var data = [];
+	for (var i=years[0]; i<=years[1]; i++) {
+		data.push({
+			year : i,
+			claim : 0,
+			total : 0,
+			average : 0,
+		});
+	}
+	data_filt.forEach(function (el) {
+		data.find(function(e) {
+			if (e.year == el["Year"]) {
+				e.total++;
+				e.claim += el["Claim Amount"];
+				return;
+			}
+		})
+	});
+	data.forEach(function(el) {
+		el.average = el.claim / el.total;
+		if (el.total == 0) {el.average = 0;};
+	});
+	
+	var yMax = d3.max(data, function(d) {
+		return d.average;
+	});
+	
+	var yScale = d3.scaleLinear()
+	.range([600, 0])
+	.domain([0, yMax]);
+	line_yAxis.scale(yScale);
+	line_yAxisGroup.call(line_yAxis);
+	
+	lineGraph.datum(data)
+	.attr("d", d3.line()
+			.x(function(d) {return line_xScale(new Date("January " + d.year));})
+			.y(function(d) {return yScale(d.average);}))
+	.attr("fill", "none")
+	.attr("stroke", "black")
+	.attr("stroke-width", 2.5);
+	
+}
+
+function brushedMap() {
+	var selection = d3.event.selection;
+	brush_codes.length = 0;
+	if (selection) {
+		dataBars.selectAll("rect").each(function(d) {
+			var x = d.coordinates[0];
+			var y = d.coordinates[1];
+			if (x >= selection[0][0] && y >= selection[0][1] && x <= selection[1][0] && y <= selection[1][1]) {
+				brush_codes.push(d.code);
+			}
+		});
+	}
+	scatterplot_svg.select(".brush").call(scatterBrush.move, null);
+	filterData();
+}
+
+function brushedScatter() {
+	var selection = d3.event.selection;
+	if (!selection) { return; }
+	brush_codes.length = 0;
+	scatterplot_svg.selectAll("circle").each(function(d) {
+		var x = d3.select(this).attr("cx");
+		var y = d3.select(this).attr("cy");
+		if (x >= selection[0][0] && y >= selection[0][1] && x <= selection[1][0] && y <= selection[1][1]) {
+			brush_codes.push(d.code);
+		}
+	});
+	scatterplot_svg.select(".brush").call(scatterBrush.move, null);
+	filterData();
+}
+
+function brushedLine() {
+	var selection = d3.event.selection;
+	if (!selection) {return;}
+	var selectedYears = selection.map(timeScale.invert, timeScale);
+	selectedYears[0] = new Date(selectedYears[0].getFullYear(), (selectedYears[0].getMonth() + 6));
+	selectedYears[1] = new Date(selectedYears[1].getFullYear(), (selectedYears[1].getMonth() + 6));
+	selectedYears[0].setMonth(0);
+	selectedYears[1].setMonth(0);
+	years[0] = selectedYears[0].getFullYear();
+	years[1] = selectedYears[1].getFullYear();
+	line_xScale.domain(selectedYears);
+	filterData();
+}
+
+function filterData() {
+	data_filtered = data_all.filter(function(el) {
+		return el["Year"] >= years[0] && el["Year"] <= years[1] && (brush_codes.length != 0 ? brush_codes.includes(el["Airport Code"]) : true);
+	});
+	updateData();
+}
+
+mySvg.append("text")
+.text("Total amount of TSA claims per airport across the USA between 2002 and 2009")
+.attr("x", 10)
+.attr("y", 30)
+.style("font-size", 25)
+
+</script>
+</html>
